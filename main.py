@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import threading
 import time
 
-TOKEN = os.getenv("8466680539:AAH4xYzLuoD2lg8nrL3J-81LJdeUraCu95o")
-ADMIN_ID = int(os.getenv("8575973133"))
-CHANNEL_ID = os.getenv("1003863412599")
+TOKEN = os.getenv("TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 bot = telebot.TeleBot(TOKEN)
 
