@@ -40,7 +40,7 @@ def start(m):
 @bot.callback_query_handler(func=lambda call: call.data=="buy")
 def buy(call):
     bot.send_message(call.message.chat.id,
-                     "💰 Price: ₹99\nUPI: your@upi\n\nPayment karke screenshot bhejo")
+                     "💰 Price: ₹50\nUPI: vinay-24@axl\n\nPayment karke screenshot bhejo")
 
 # SCREENSHOT HANDLE
 @bot.message_handler(content_types=['photo'])
