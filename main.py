@@ -59,7 +59,7 @@ def select_plan(call):
     bot.send_photo(
         call.message.chat.id,
         open("qr.png", "rb"),
-        caption=f"💰 Plan: {duration}\nPrice: {price}\n\nUPI: yourupi@upi\n\nQR scan karke payment karo aur screenshot bhejo"
+        caption=f"💰 Plan: {duration}\nPrice: {price}\n\nUPI: vinay-24@axl\n\nQR scan karke payment karo aur screenshot bhejo"
     )
 
 # SCREENSHOT HANDLE
