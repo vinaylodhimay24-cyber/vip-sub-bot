@@ -107,7 +107,7 @@ def approve(c):
 
     bot.send_message(
         user_id,
-        f"✅ Approved\n\n🔗 Join Channel:\n{link.invite_link}\n\n❗ Problem ho to contact:\n👉 @yourusername"
+        f"✅ Approved\n\n🔗 Join Channel:\n{link.invite_link}\n\n❗ Problem ho to contact:\n👉 @BestSellrs02"
     )
 
     bot.answer_callback_query(c.id, "Approved")
