@@ -82,7 +82,12 @@ def handle_photo(m):
     )
 
     bot.send_message(ADMIN_ID, f"User ID: {m.chat.id}", reply_markup=markup)
-    bot.reply_to(m, "Screenshot admin ko bhej diya gaya ✅")
+
+    # ✅ Updated user message
+    bot.reply_to(
+        m,
+        "✅ Screenshot admin ko bhej diya gaya\n\n⏳ Admin approve karega, tab tak wait karo\n\n⚠️ Jaldi response ke liye contact:\n👉 @BestSellrs02"
+    )
 
 # APPROVE
 @bot.callback_query_handler(func=lambda c: c.data.startswith("approve"))
@@ -99,15 +104,16 @@ def approve(c):
     users[user_id] = expiry
     save()
 
-    # ✅ ONE-TIME LINK (NO TIME LIMIT)
+    # ✅ One-time link + 10 min expiry
     link = bot.create_chat_invite_link(
         CHANNEL_ID,
-        member_limit=1
+        member_limit=1,
+        expire_date=int(time.time()) + 600
     )
 
     bot.send_message(
         user_id,
-        f"✅ Approved\n\n🔗 Join Channel:\n{link.invite_link}\n\n❗ Problem ho to contact:\n👉 @BestSellrs02"
+        f"✅ Approved\n\n🔗 Join Channel:\n{link.invite_link}\n\n⚠️ Link ek hi baar use hoga\n❗ Problem ho to contact:\n👉 @yourusername"
     )
 
     bot.answer_callback_query(c.id, "Approved")
