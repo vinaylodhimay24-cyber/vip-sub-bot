@@ -1,193 +1,189 @@
-import os
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import time
+import sqlite3
 from datetime import datetime, timedelta
 import threading
-import time
 
-TOKEN = os.getenv("TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+API_TOKEN = "8466680539:AAH4xYzLuoD2lg8nrL3J-81LJdeUraCu95o"
+CHANNEL_ID = -1003863412599
+ADMIN_ID = 8250437589
+ADMIN_USERNAME = "@BestSellrs02"
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(API_TOKEN)
 
-users = {}
-user_plans = {}
-last_sent = {}
+# ================= DATABASE =================
+conn = sqlite3.connect("bot.db", check_same_thread=False)
+cursor = conn.cursor()
 
-# SAVE / LOAD
-def save():
-    with open("users.txt", "w") as f:
-        for u in users:
-            f.write(f"{u},{users[u].isoformat()}\n")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    expiry TEXT,
+    active INTEGER,
+    reminder_sent INTEGER DEFAULT 0
+)
+""")
+conn.commit()
 
-def load():
-    try:
-        with open("users.txt") as f:
-            for line in f:
-                u, d = line.strip().split(",")
-                users[int(u)] = datetime.fromisoformat(d)
-    except:
-        pass
 
-load()
-
-# START
+# ================= START =================
 @bot.message_handler(commands=['start'])
-def start(m):
-    markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("💳 ₹50 - 1 Month", callback_data="plan_1"),
-        InlineKeyboardButton("💳 ₹100 - 3 Months", callback_data="plan_3")
-    )
-    bot.send_message(m.chat.id, "Welcome 👋\nSelect Plan 👇", reply_markup=markup)
+def start(message):
+    user_id = message.chat.id
 
-# PLAN SELECT
-@bot.callback_query_handler(func=lambda call: call.data.startswith("plan"))
-def select_plan(call):
-    plan = call.data.split("_")[1]
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, active) VALUES (?, 0)", (user_id,))
+    conn.commit()
 
-    if plan == "1":
-        price = "₹50"
-        duration = "1 Month"
-    else:
-        price = "₹100"
-        duration = "3 Months"
+    bot.send_message(user_id, f"""
+👋 Welcome!
 
-    user_plans[call.message.chat.id] = plan
+💰 Plan lene ke liye /buy likho
 
-    bot.send_photo(
-        call.message.chat.id,
-        open("qr.png", "rb"),
-        caption=f"💰 Plan: {duration}\nPrice: {price}\n\nUPI: vinay-24@axl\n\nQR scan karke payment karo aur screenshot bhejo"
-    )
+❓ Problem?
+👉 https://t.me/{ADMIN_USERNAME}
+""")
 
-    bot.answer_callback_query(call.id)
 
-# SCREENSHOT
-@bot.message_handler(content_types=['photo'])
-def handle_photo(m):
-    if m.chat.id in last_sent and time.time() - last_sent[m.chat.id] < 30:
-        bot.reply_to(m, "⏳ Wait 30 sec before sending again")
+# ================= BUY =================
+@bot.message_handler(commands=['buy'])
+def buy(message):
+    user_id = message.chat.id
+
+    cursor.execute("SELECT active FROM users WHERE user_id=?", (user_id,))
+    active = cursor.fetchone()[0]
+
+    if active == 1:
+        bot.send_message(user_id, "⚠️ Tumhara plan already active hai")
         return
 
-    last_sent[m.chat.id] = time.time()
+    bot.send_message(user_id,
+                     "💳 Payment karo\n\nPayment ke baad apna UTR number bhejo")
 
-    bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
 
-    markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("✅ Approve", callback_data=f"approve_{m.chat.id}"),
-        InlineKeyboardButton("❌ Reject", callback_data=f"reject_{m.chat.id}")
-    )
+# ================= PAYMENT VERIFY =================
+@bot.message_handler(func=lambda m: m.text.isdigit())
+def utr(message):
+    user_id = message.chat.id
+    utr = message.text
 
-    bot.send_message(ADMIN_ID, f"User ID: {m.chat.id}", reply_markup=markup)
-    bot.reply_to(m, "Screenshot admin ko bhej diya gaya ✅")
+    bot.send_message(user_id, "⏳ Payment verify ho raha hai...")
 
-# APPROVE
-@bot.callback_query_handler(func=lambda c: c.data.startswith("approve"))
-def approve(c):
-    user_id = int(c.data.split("_")[1])
+    # Admin ko bhejo
+    bot.send_message(ADMIN_ID,
+                     f"💰 New Payment Request\nUser: {user_id}\nUTR: {utr}\n\n/approve_{user_id}")
 
-    plan = user_plans.get(user_id, "1")
 
-    if plan == "1":
-        expiry = datetime.now() + timedelta(days=30)
-    else:
-        expiry = datetime.now() + timedelta(days=90)
-
-    users[user_id] = expiry
-    save()
-
-    link = bot.create_chat_invite_link(
-        CHANNEL_ID,
-        member_limit=1,
-        expire_date=int(time.time()) + 60
-    )
-
-    bot.send_message(
-        user_id,
-        f"✅ Approved\n⚠️ Link sirf 1 minute valid hai\n{link.invite_link}"
-    )
-
-    bot.answer_callback_query(c.id, "Approved")
-
-# REJECT
-@bot.callback_query_handler(func=lambda c: c.data.startswith("reject"))
-def reject(c):
-    user_id = int(c.data.split("_")[1])
-    bot.send_message(user_id, "❌ Payment rejected")
-    bot.answer_callback_query(c.id, "Rejected")
-
-# BROADCAST
-@bot.message_handler(commands=['broadcast'])
-def broadcast(m):
-    if m.chat.id != ADMIN_ID:
+# ================= ADMIN APPROVE =================
+@bot.message_handler(func=lambda m: m.text.startswith("/approve_"))
+def approve(message):
+    if message.chat.id != ADMIN_ID:
         return
 
-    msg = m.text.replace("/broadcast ", "")
-    count = 0
+    user_id = int(message.text.split("_")[1])
 
-    for u in users:
-        try:
-            bot.send_message(u, msg)
-            count += 1
-        except:
-            pass
+    expiry = datetime.now() + timedelta(minutes=10)
 
-    bot.send_message(ADMIN_ID, f"Sent to {count} users")
+    cursor.execute("UPDATE users SET expiry=?, active=1, reminder_sent=0 WHERE user_id=?",
+                   (expiry, user_id))
+    conn.commit()
 
-# USERS COUNT
-@bot.message_handler(commands=['users'])
-def users_count(m):
-    if m.chat.id != ADMIN_ID:
-        return
-    bot.send_message(m.chat.id, f"Total active users: {len(users)}")
+    invite = bot.create_chat_invite_link(
+        chat_id=CHANNEL_ID,
+        member_limit=1
+    )
 
-# AUTO REMOVE
+    bot.send_message(user_id, f"""
+✅ Payment verified!
+
+🔗 Join:
+{invite.invite_link}
+
+⚠️ Sirf 1 user ke liye valid
+""")
+
+
+# ================= EXPIRY SYSTEM =================
 def expiry_check():
     while True:
         now = datetime.now()
-        for u in list(users):
-            if users[u] < now:
-                try:
-                    bot.ban_chat_member(CHANNEL_ID, u)
-                    bot.unban_chat_member(CHANNEL_ID, u)
-                    del users[u]
-                    save()
-                except:
-                    pass
-        time.sleep(60)
 
-# AUTO REMINDER
-def reminder_check():
-    sent_1day = set()
-    sent_1hour = set()
+        cursor.execute("SELECT user_id, expiry, active, reminder_sent FROM users")
+        data = cursor.fetchall()
 
-    while True:
-        now = datetime.now()
+        for user_id, expiry, active, reminder_sent in data:
+            if active == 1 and expiry:
+                expiry_time = datetime.fromisoformat(expiry)
 
-        for u in users:
-            remaining = users[u] - now
+                # expire
+                if now >= expiry_time:
+                    bot.send_message(user_id, "❌ Plan expired")
+                    cursor.execute("UPDATE users SET active=0 WHERE user_id=?", (user_id,))
+                    conn.commit()
 
-            if 0 < remaining.total_seconds() <= 86400 and u not in sent_1day:
-                try:
-                    bot.send_message(u, "⏰ Subscription 1 day me expire hogi")
-                    sent_1day.add(u)
-                except:
-                    pass
+                # reminder only once
+                elif (expiry_time - now).total_seconds() <= 60 and reminder_sent == 0:
+                    bot.send_message(user_id, "⚠️ Plan expiring in 1 minute")
+                    cursor.execute("UPDATE users SET reminder_sent=1 WHERE user_id=?", (user_id,))
+                    conn.commit()
 
-            if 0 < remaining.total_seconds() <= 3600 and u not in sent_1hour:
-                try:
-                    bot.send_message(u, "⚠️ Subscription 1 hour me expire hogi")
-                    sent_1hour.add(u)
-                except:
-                    pass
+        time.sleep(30)
 
-        time.sleep(60)
 
-# THREADS
+# ================= ADMIN PANEL =================
+@bot.message_handler(commands=['admin'])
+def admin(message):
+    if message.chat.id != ADMIN_ID:
+        return
+
+    bot.send_message(ADMIN_ID,
+                     "👑 Admin Panel:\n/broadcast\n/users")
+
+
+# ================= USERS =================
+@bot.message_handler(commands=['users'])
+def users_list(message):
+    if message.chat.id != ADMIN_ID:
+        return
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    count = cursor.fetchone()[0]
+
+    bot.send_message(ADMIN_ID, f"👥 Total Users: {count}")
+
+
+# ================= BROADCAST =================
+@bot.message_handler(commands=['broadcast'])
+def broadcast(message):
+    if message.chat.id != ADMIN_ID:
+        return
+
+    bot.send_message(ADMIN_ID, "📢 Message bhejo")
+    bot.register_next_step_handler(message, send_broadcast)
+
+
+def send_broadcast(message):
+    cursor.execute("SELECT user_id FROM users")
+    users = cursor.fetchall()
+
+    for user in users:
+        try:
+            bot.send_message(user[0], message.text)
+            time.sleep(0.5)
+        except:
+            pass
+
+    bot.send_message(ADMIN_ID, "✅ Broadcast done")
+
+
+# ================= CONTACT =================
+@bot.message_handler(commands=['contact'])
+def contact(message):
+    bot.send_message(message.chat.id,
+                     f"📩 Contact:\n👉 https://t.me/{ADMIN_USERNAME}")
+
+
+# ================= RUN =================
 threading.Thread(target=expiry_check).start()
-threading.Thread(target=reminder_check).start()
 
+print("Bot running...")
 bot.infinity_polling()
