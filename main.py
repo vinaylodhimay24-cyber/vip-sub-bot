@@ -13,6 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 
 users = {}
 user_plans = {}
+last_sent = {}
 
 # SAVE / LOAD
 def save():
@@ -55,16 +56,23 @@ def select_plan(call):
 
     user_plans[call.message.chat.id] = plan
 
-    # QR + UPI send
     bot.send_photo(
         call.message.chat.id,
         open("qr.png", "rb"),
-        caption=f"💰 Plan: {duration}\nPrice: {price}\n\nUPI: vinay-24@axl\n\nQR scan karke payment karo aur screenshot bhejo"
+        caption=f"💰 Plan: {duration}\nPrice: {price}\n\nUPI: yourupi@upi\n\nQR scan karke payment karo aur screenshot bhejo"
     )
 
-# SCREENSHOT HANDLE
+    bot.answer_callback_query(call.id)
+
+# SCREENSHOT
 @bot.message_handler(content_types=['photo'])
 def handle_photo(m):
+    if m.chat.id in last_sent and time.time() - last_sent[m.chat.id] < 30:
+        bot.reply_to(m, "⏳ Wait 30 sec before sending again")
+        return
+
+    last_sent[m.chat.id] = time.time()
+
     bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
 
     markup = InlineKeyboardMarkup()
@@ -94,10 +102,14 @@ def approve(c):
     link = bot.create_chat_invite_link(
         CHANNEL_ID,
         member_limit=1,
-        expire_date=int(time.time()) + 300
+        expire_date=int(time.time()) + 60
     )
 
-    bot.send_message(user_id, f"✅ Approved\nJoin: {link.invite_link}")
+    bot.send_message(
+        user_id,
+        f"✅ Approved\n⚠️ Link sirf 1 minute valid hai\n{link.invite_link}"
+    )
+
     bot.answer_callback_query(c.id, "Approved")
 
 # REJECT
@@ -107,7 +119,32 @@ def reject(c):
     bot.send_message(user_id, "❌ Payment rejected")
     bot.answer_callback_query(c.id, "Rejected")
 
-# AUTO EXPIRY
+# BROADCAST
+@bot.message_handler(commands=['broadcast'])
+def broadcast(m):
+    if m.chat.id != ADMIN_ID:
+        return
+
+    msg = m.text.replace("/broadcast ", "")
+    count = 0
+
+    for u in users:
+        try:
+            bot.send_message(u, msg)
+            count += 1
+        except:
+            pass
+
+    bot.send_message(ADMIN_ID, f"Sent to {count} users")
+
+# USERS COUNT
+@bot.message_handler(commands=['users'])
+def users_count(m):
+    if m.chat.id != ADMIN_ID:
+        return
+    bot.send_message(m.chat.id, f"Total active users: {len(users)}")
+
+# AUTO REMOVE
 def expiry_check():
     while True:
         now = datetime.now()
@@ -122,6 +159,35 @@ def expiry_check():
                     pass
         time.sleep(60)
 
+# AUTO REMINDER
+def reminder_check():
+    sent_1day = set()
+    sent_1hour = set()
+
+    while True:
+        now = datetime.now()
+
+        for u in users:
+            remaining = users[u] - now
+
+            if 0 < remaining.total_seconds() <= 86400 and u not in sent_1day:
+                try:
+                    bot.send_message(u, "⏰ Subscription 1 day me expire hogi")
+                    sent_1day.add(u)
+                except:
+                    pass
+
+            if 0 < remaining.total_seconds() <= 3600 and u not in sent_1hour:
+                try:
+                    bot.send_message(u, "⚠️ Subscription 1 hour me expire hogi")
+                    sent_1hour.add(u)
+                except:
+                    pass
+
+        time.sleep(60)
+
+# THREADS
 threading.Thread(target=expiry_check).start()
+threading.Thread(target=reminder_check).start()
 
 bot.infinity_polling()
