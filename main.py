@@ -40,11 +40,17 @@ def start(m):
         InlineKeyboardButton("💳 ₹50 - 1 Month", callback_data="plan_1"),
         InlineKeyboardButton("💳 ₹100 - 3 Months", callback_data="plan_3")
     )
-    bot.send_message(m.chat.id, "Welcome 👋\nSelect Plan 👇", reply_markup=markup)
+
+    bot.send_message(
+        m.chat.id,
+        "👋 Welcome\n\n💎 Select Membership Plan 👇",
+        reply_markup=markup
+    )
 
 # PLAN SELECT
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan"))
 def select_plan(call):
+
     plan = call.data.split("_")[1]
 
     if plan == "1":
@@ -59,7 +65,21 @@ def select_plan(call):
     bot.send_photo(
         call.message.chat.id,
         open("qr.png", "rb"),
-        caption=f"💰 Plan: {duration}\nPrice: {price}\n\nUPI: vinay-24@axl\n\nQR scan karke payment karo aur screenshot bhejo"
+        caption=f"""
+💰 Plan: {duration}
+💳 Price: {price}
+
+🏦 UPI ID:
+vinay-24@axl
+
+📌 Payment Steps:
+1️⃣ QR scan karo ya UPI ID use karo
+2️⃣ Payment complete karo
+3️⃣ Screenshot bhejo
+4️⃣ UPI UTR / Ref Number bhejo
+
+⚠️ Fake payment = permanent ban
+"""
     )
 
     bot.answer_callback_query(call.id)
@@ -67,12 +87,14 @@ def select_plan(call):
 # SCREENSHOT
 @bot.message_handler(content_types=['photo'])
 def handle_photo(m):
+
     if m.chat.id in last_sent and time.time() - last_sent[m.chat.id] < 30:
         bot.reply_to(m, "⏳ Wait 30 sec before sending again")
         return
 
     last_sent[m.chat.id] = time.time()
 
+    # Forward screenshot to admin
     bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
 
     markup = InlineKeyboardMarkup()
@@ -81,17 +103,41 @@ def handle_photo(m):
         InlineKeyboardButton("❌ Reject", callback_data=f"reject_{m.chat.id}")
     )
 
-    bot.send_message(ADMIN_ID, f"User ID: {m.chat.id}", reply_markup=markup)
+    bot.send_message(
+        ADMIN_ID,
+        f"📸 Payment Screenshot\n\n👤 User ID: {m.chat.id}",
+        reply_markup=markup
+    )
 
-    # ✅ Updated user message
     bot.reply_to(
         m,
-        "✅ Screenshot admin ko bhej diya gaya\n\n⏳ Admin approve karega, tab tak wait karo\n\n⚠️ Jaldi response ke liye contact:\n👉 @BestSellrs02"
+        "✅ Screenshot admin ko bhej diya gaya\n\n📌 Ab apna UPI UTR / Ref Number bhejo\n\n⏳ Verification pending\n\n⚠️ Jaldi response ke liye contact:\n👉 @BestSellrs02"
+    )
+
+# UTR NUMBER
+@bot.message_handler(func=lambda m: m.text.isdigit())
+def utr_number(m):
+
+    bot.send_message(
+        ADMIN_ID,
+        f"""
+💳 New UTR Number
+
+👤 User ID: {m.chat.id}
+🔢 UTR / Ref Number:
+{m.text}
+"""
+    )
+
+    bot.reply_to(
+        m,
+        "✅ UTR Number admin ko bhej diya gaya\n\n⏳ Admin verification pending"
     )
 
 # APPROVE
 @bot.callback_query_handler(func=lambda c: c.data.startswith("approve"))
 def approve(c):
+
     user_id = int(c.data.split("_")[1])
 
     plan = user_plans.get(user_id, "1")
@@ -104,7 +150,7 @@ def approve(c):
     users[user_id] = expiry
     save()
 
-    # ✅ One-time link + 10 min expiry
+    # One-time invite link
     link = bot.create_chat_invite_link(
         CHANNEL_ID,
         member_limit=1,
@@ -113,7 +159,18 @@ def approve(c):
 
     bot.send_message(
         user_id,
-        f"✅ Approved\n\n🔗 Join Channel:\n{link.invite_link}\n\n⚠️ Link ek hi baar use hoga\n❗ Problem ho to contact:\n👉 @BestSellrs02"
+        f"""
+✅ Payment Approved
+
+🔗 Join Channel:
+{link.invite_link}
+
+⚠️ Link sirf 1 baar use hoga
+⏰ 10 minute me expire ho jayega
+
+❗ Problem?
+👉 @BestSellrs02
+"""
     )
 
     bot.answer_callback_query(c.id, "Approved")
@@ -121,13 +178,20 @@ def approve(c):
 # REJECT
 @bot.callback_query_handler(func=lambda c: c.data.startswith("reject"))
 def reject(c):
+
     user_id = int(c.data.split("_")[1])
-    bot.send_message(user_id, "❌ Payment rejected")
+
+    bot.send_message(
+        user_id,
+        "❌ Payment Rejected\n\n⚠️ Agar payment kiya hai to admin se contact karo\n👉 @BestSellrs02"
+    )
+
     bot.answer_callback_query(c.id, "Rejected")
 
 # BROADCAST
 @bot.message_handler(commands=['broadcast'])
 def broadcast(m):
+
     if m.chat.id != ADMIN_ID:
         return
 
@@ -141,51 +205,81 @@ def broadcast(m):
         except:
             pass
 
-    bot.send_message(ADMIN_ID, f"Sent to {count} users")
+    bot.send_message(
+        ADMIN_ID,
+        f"✅ Broadcast sent to {count} users"
+    )
 
 # USERS COUNT
 @bot.message_handler(commands=['users'])
 def users_count(m):
+
     if m.chat.id != ADMIN_ID:
         return
-    bot.send_message(m.chat.id, f"Total active users: {len(users)}")
 
-# AUTO REMOVE
+    bot.send_message(
+        m.chat.id,
+        f"👥 Total Active Users: {len(users)}"
+    )
+
+# AUTO REMOVE EXPIRED USERS
 def expiry_check():
+
     while True:
+
         now = datetime.now()
+
         for u in list(users):
+
             if users[u] < now:
+
                 try:
                     bot.ban_chat_member(CHANNEL_ID, u)
                     bot.unban_chat_member(CHANNEL_ID, u)
+
                     del users[u]
                     save()
+
+                    bot.send_message(
+                        u,
+                        "❌ Your Subscription Expired"
+                    )
+
                 except:
                     pass
+
         time.sleep(60)
 
 # AUTO REMINDER
 def reminder_check():
+
     sent_1day = set()
     sent_1hour = set()
 
     while True:
+
         now = datetime.now()
 
         for u in users:
+
             remaining = users[u] - now
 
             if 0 < remaining.total_seconds() <= 86400 and u not in sent_1day:
                 try:
-                    bot.send_message(u, "⏰ Subscription 1 day me expire hogi")
+                    bot.send_message(
+                        u,
+                        "⏰ Your subscription will expire in 1 day"
+                    )
                     sent_1day.add(u)
                 except:
                     pass
 
             if 0 < remaining.total_seconds() <= 3600 and u not in sent_1hour:
                 try:
-                    bot.send_message(u, "⚠️ Subscription 1 hour me expire hogi")
+                    bot.send_message(
+                        u,
+                        "⚠️ Your subscription will expire in 1 hour"
+                    )
                     sent_1hour.add(u)
                 except:
                     pass
@@ -196,4 +290,5 @@ def reminder_check():
 threading.Thread(target=expiry_check).start()
 threading.Thread(target=reminder_check).start()
 
+print("Bot Running...")
 bot.infinity_polling()
